@@ -1,7 +1,7 @@
 CPP = g++
 CPPOPTS = -O3 -Wall -Werror -Werror=effc++ -g
 
-INCLUDES = -Iinclude
+INCLUDES = -Iinclude -isystem third/Catch/single_include
 LIBS = -lcurl
 
 all: test

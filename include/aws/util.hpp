@@ -229,6 +229,9 @@ inline std::size_t AWS::Curl::Connection::appendHeader_(void *ptr, std::size_t s
     return size * nmemb;
 }
 
+/******************************************************************************
+ * Auth Implementation
+ *****************************************************************************/
 inline std::string AWS::Auth::canonicalizedAmzHeaders(const Headers& headers) {
     /* We're copying each header over, because we have to do some manipulation
      * of them. In particular, of the keys */
@@ -238,11 +241,12 @@ inline std::string AWS::Auth::canonicalizedAmzHeaders(const Headers& headers) {
     for (; it != headers.end(); ++it) {
         /* Lowercase each of the key names */
         key = boost::algorithm::to_lower_copy(it->first);
-        std::cout << "Converted to " << key << std::endl;
 
         /* Filter out all headers that belong to Amazon */
         if (key.find("x-amz-") == 0) {
-            canonical[key] = it->second;
+            /* It's important to merge these, not replace */
+            canonical[key].insert(
+                canonical[key].end(), it->second.begin(), it->second.end());
         }
     }
 
@@ -250,12 +254,12 @@ inline std::string AWS::Auth::canonicalizedAmzHeaders(const Headers& headers) {
     std::string line;
     std::vector<std::string> lines;
     for (it = canonical.begin(); it != canonical.end(); ++it) {
-        line = it->first + ":" + boost::algorithm::join(it->second, ",");
+        line = boost::algorithm::join(it->second, ",");
         /* Replace all the newlines in this, and then strip all the leading
          * and trailing whiespace */
         boost::algorithm::replace_all(line, "\n", " ");
         boost::algorithm::trim(line);
-        lines.push_back(line);
+        lines.push_back(it->first + ":" + line);
     }
     return boost::algorithm::join(lines, "\n");
 }
