@@ -88,9 +88,7 @@ namespace AWS {
                 :curl(curl_easy_init())
                 ,curl_error()
                 ,request_headers()
-                ,response_headers() {
-                std::cout << "Initializing a curl connection" << std::endl;
-            }
+                ,response_headers() {}
 
             Connection(const Connection& other)
                 :curl(curl_easy_init())
@@ -99,7 +97,6 @@ namespace AWS {
                 ,response_headers() {}
 
             ~Connection() {
-                std::cout << "Cleaning up our curl connection" << std::endl;
                 curl_easy_cleanup(curl);
             }
 
@@ -117,7 +114,8 @@ namespace AWS {
             void addHeader(const std::string& key, const std::string& value);
 
             /* Perform the request */
-            long get(const std::string& host, const Path& path, const std::string& query, FILE* fp);
+            template <typename T>
+            long get(const std::string& host, const Path& path, const std::string& query, T& stream);
 
             /* Get the request headers */
             const Headers& get_request_headers() { return request_headers; }
@@ -125,6 +123,10 @@ namespace AWS {
             /* This is for use with curl when reading a response header. This
              * is not meant to be used, but it has to be public for curl */
             static std::size_t appendHeader_(void *ptr, std::size_t size,
+                std::size_t nmemb, void *stream);
+
+            template <typename T>
+            static std::size_t appendData_(void* ptr, std::size_t size,
                 std::size_t nmemb, void *stream);
         private:
             CURL*   curl;
@@ -178,16 +180,15 @@ inline void AWS::Curl::Connection::addHeader(const std::string& key,
     request_headers[key].push_back(value);
 }
 
+template <typename T>
 inline long AWS::Curl::Connection::get(const std::string& host,
-    const Path& path, const std::string& query, FILE* fp) {
+    const Path& path, const std::string& query, T& stream) {
     /* Let's begin by putting together some headers */
     Slist slist;
     typename Headers::iterator hit(request_headers.begin());
     typename HeaderValues::iterator vit;
     for (; hit != request_headers.end(); ++hit) {
-        std::cout << "Putting together header " << hit->first << std::endl;
         for (vit = hit->second.begin(); vit != hit->second.end(); ++vit) {
-            std::cout << "   Value: " << *vit << std::endl;
             slist.append(hit->first + ": " + *vit);
         }
     }
@@ -203,7 +204,6 @@ inline long AWS::Curl::Connection::get(const std::string& host,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist.slist());
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curl_error);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
 
     /* These came right out of the original code */
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024);
@@ -214,6 +214,10 @@ inline long AWS::Curl::Connection::get(const std::string& host,
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
         AWS::Curl::Connection::appendHeader_);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, reinterpret_cast<void*>(this));
+    /* And how we'll write the data */
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+        AWS::Curl::Connection::appendData_<T>);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, reinterpret_cast<void*>(&stream));
     
     /* If there was an error, return something to indicate that */
     if (curl_easy_perform(curl) != CURLE_OK) {
@@ -241,14 +245,19 @@ inline std::size_t AWS::Curl::Connection::appendHeader_(void *ptr, std::size_t s
     line = line.substr(0, line.length() - 2);
     /* Find the ': ' in the line if there is one for our key, value */
     std::size_t pos = line.find(": ");
-    if (pos == std::string::npos) {
-        std::cerr << "Skipping line: " << line << std::endl;
-    } else {
+    if (pos != std::string::npos) {
         std::string key(line.substr(0, pos));
         std::string value(line.substr(pos + 2));
-        std::cerr << "Key: " << key << " = " << value << std::endl;
         conn->response_headers[key].push_back(value);
     }
+    return size * nmemb;
+}
+
+template <typename T>
+inline std::size_t AWS::Curl::Connection::appendData_(void* ptr,
+    std::size_t size, std::size_t nmemb, void *stream) {
+    (*reinterpret_cast<T*>(stream)) << std::string(
+        reinterpret_cast<char*>(ptr), size * nmemb);
     return size * nmemb;
 }
 

@@ -26,13 +26,15 @@
 #include <aws/s3.hpp>
 
 #include <iostream>
+#include <fstream>
 
 int main(int argc, char** argv) {
     /* By default, it will load your local environment variables */
     AWS::S3::Connection conn;
 
     /* Now get a particular file from S3 and save it locally */
-    if (conn.get("urlschedulingtest", "/urls.monthly.0.0/urls.monthly.0.0.authority.lzoc.1363679153.manifest", "localpath")) {
+    std::ofstream out("localpath");
+    if (conn.get("urlschedulingtest", "/urls.monthly.0.0/urls.monthly.0.0.authority.lzoc.1363679153.manifest", out)) {
         std::cout << "We fetched a page!" << std::endl;
         return 0;
     } else {

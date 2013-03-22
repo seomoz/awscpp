@@ -20,8 +20,11 @@ default read your environment for the variables `AWS_ACCESS_ID` and
 
 ...
 
+// Any ostream will work here
+std::ofstream out("local/download/path");
+
 AWS::S3::Connection s3;
-if (s3.get("bucket", "object", "local/download/path")) {
+if (s3.get("bucket", "object", out) {
     std::cout << "Success!" << std::endl;
 } else {
     std::cout << "Failure" << std::endl;

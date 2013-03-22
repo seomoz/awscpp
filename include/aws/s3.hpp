@@ -53,20 +53,23 @@ namespace AWS {
             /* By default, load the environment variables */
             Connection()
                 :access_id(getenv("AWS_ACCESS_ID"))
-                ,secret_key(getenv("AWS_SECRET_KEY"))
-                ,curl() {}
+                ,secret_key(getenv("AWS_SECRET_KEY")) {}
 
             /* Otherwise, you can provide them explicitly */
             Connection(
                 const std::string& access_id,
                 const std::string& secret_key)
                 :access_id(access_id)
-                ,secret_key(secret_key)
-                ,curl() {}
+                ,secret_key(secret_key) {}
 
             /* Download a S3 resource to a local file */
+            template <typename T>
             bool get(const std::string& bucket, const Path& object,
-                const Path& local);
+                T& stream, std::size_t retries=5);
+
+            /* Download a S3 resource to a string and return it */
+            std::string get(const std::string& bucket, const Path& object,
+                std::size_t retries=5);
 
             /* Do some S3 authentication y'all */
             bool auth(const std::string& url, const std::string& verb,
@@ -75,9 +78,6 @@ namespace AWS {
             /* We need to know a little bit about the auth here */
             std::string access_id;
             std::string secret_key;
-
-            /* We also need to be able to make requests */
-            AWS::Curl::Connection curl;
 
             /* Canonicalize the query string */
             std::string canonicalizedQueryString();
@@ -88,30 +88,43 @@ namespace AWS {
 /******************************************************************************
  * Implementation of S3
  *****************************************************************************/
+template <typename T>
 inline bool AWS::S3::Connection::get(const std::string& bucket,
-    const Path& object, const Path& local) {
-    /* Before we begin, make sure we can open the file */
-    FILE* fp = fopen(local.string().c_str(), "w+");
-    if (!fp) {
-        std::cerr << "Error opening file" << std::endl;
-        return false;
-    }
+    const Path& object, T& stream, std::size_t retries) {
+    /* Check the original size of the file so that we can rewind if need be */
+    std::streampos position = stream.tellp();
 
     /* Begin forming our request */
     std::string date = AWS::Auth::date();
-    curl.reset();
-    curl.addHeader("User-Agent", "danbot");
-    curl.addHeader("Date", date);
-
-    /* Now we're ready to submit our 'GET' */
+    AWS::Curl::Connection curl;
+    /* And compute our signature */
     std::string signature = AWS::Auth::signature("GET", "", "", date,
         curl.get_request_headers(), "/" + bucket + object.string(),
         secret_key);
 
-    /* Lastly, we'll add our authorization header */
-    curl.addHeader("Authorization", "AWS " + access_id + ":" + signature);
-    long response = curl.get(
-        bucket + ".s3.amazonaws.com", object.string(), "", fp);
+    /* Begin our attempt to fetch */
+    long response;
+    for (std::size_t i = 0; (response != 200) && (i < retries); ++i) {
+        stream.seekp(position);
+        curl.reset();
+        curl.addHeader("User-Agent", "danbot");
+        curl.addHeader("Date", date);
+        curl.addHeader("Authorization", "AWS " + access_id + ":" + signature);
+        response = curl.get(
+            bucket + ".s3.amazonaws.com", object.string(), "", stream);
+    }
+    
     std::cout << "Response: " << response << std::endl;
     return response == 200;
+}
+
+inline std::string AWS::S3::Connection::get(const std::string& bucket,
+    const Path& object, std::size_t retries) {
+    std::ostringstream stream;
+    if (get(bucket, object, stream, retries)) {
+        stream.flush();
+        return stream.str();
+    } else {
+        return "Error";
+    }
 }
