@@ -37,6 +37,7 @@
 #include <string>
 #include <locale>
 #include <ctime>
+#include <cmath>
 
 namespace AWS {
     namespace S3 {
@@ -47,20 +48,54 @@ namespace AWS {
         typedef AWS::Curl::Headers      Headers;
         typedef AWS::Curl::HeaderValues HeaderValues;
 
+        /* Some backoff policies that can be used when retrying get/fetch
+         * operations with the Connection object */
+        namespace Backoff {
+            /* Linear backoff. Given a number of tries, returns a*x + b */
+            struct Linear {
+                /* Default parameters */
+                Linear(float a=5, float b=0): a(a), b(b) {}
+
+                /* Return how much time to back off */
+                float operator()(std::size_t tries) {
+                    return a * tries + b;
+                }
+
+                float a; // Linear coefficient
+                float b; // Constant expression
+            };
+
+            /* Exponential backoff. Given a number of tries, a ** tries + b */
+            struct Exponential {
+                /* Default parameters */
+                Exponential(float a=2, float b=0): a(a), b(b) {}
+
+                /* Return how much time to back off */
+                float operator()(std::size_t tries) {
+                    return std::pow(a, tries) + b;
+                }
+
+                float a; // Base
+                float b; // Constant expression
+            };
+        }
+
         /* A S3 Connection object. When you connect, you provide all your
          * authentication credintials */
         struct Connection {
             /* By default, load the environment variables */
             Connection()
                 :access_id(getenv("AWS_ACCESS_ID"))
-                ,secret_key(getenv("AWS_SECRET_KEY")) {}
+                ,secret_key(getenv("AWS_SECRET_KEY"))
+                ,user_agent("awscpp-bot") {}
 
             /* Otherwise, you can provide them explicitly */
             Connection(
                 const std::string& access_id,
                 const std::string& secret_key)
                 :access_id(access_id)
-                ,secret_key(secret_key) {}
+                ,secret_key(secret_key)
+                ,user_agent("awscpp-bot") {}
 
             /* Download a S3 resource to a local file */
             template <typename T>
@@ -71,6 +106,18 @@ namespace AWS {
             std::string get(const std::string& bucket, const Path& object,
                 std::size_t retries=5);
 
+            /* Post the contents of a stream to a location on S3 */
+            template <typename T, typename S>
+            bool put(const std::string& bucket, const Path& object,
+                T& istream, std::size_t size, S& ostream=std::cerr,
+                std::size_t retries=5);
+
+            /* Post the contents of a string to a location on S3. This is /not/
+             * a specialization of the template put method because here the
+             * stream is a const ref */
+            std::string put(const std::string& bucket, const Path& object,
+                const std::string& stream, std::size_t retries=5);
+
             /* Do some S3 authentication y'all */
             bool auth(const std::string& url, const std::string& verb,
                 const std::string& contentMD5, const Headers& headers);
@@ -78,9 +125,7 @@ namespace AWS {
             /* We need to know a little bit about the auth here */
             std::string access_id;
             std::string secret_key;
-
-            /* Canonicalize the query string */
-            std::string canonicalizedQueryString();
+            std::string user_agent;
         };
     }
 }
@@ -107,14 +152,14 @@ inline bool AWS::S3::Connection::get(const std::string& bucket,
     for (std::size_t i = 0; (response != 200) && (i < retries); ++i) {
         stream.seekp(position);
         curl.reset();
-        curl.addHeader("User-Agent", "danbot");
+        curl.addHeader("User-Agent", user_agent);
         curl.addHeader("Date", date);
         curl.addHeader("Authorization", "AWS " + access_id + ":" + signature);
         response = curl.get(
             bucket + ".s3.amazonaws.com", object.string(), "", stream);
     }
     
-    std::cout << "Response: " << response << std::endl;
+    stream.flush();
     return response == 200;
 }
 
@@ -122,9 +167,50 @@ inline std::string AWS::S3::Connection::get(const std::string& bucket,
     const Path& object, std::size_t retries) {
     std::ostringstream stream;
     if (get(bucket, object, stream, retries)) {
-        stream.flush();
         return stream.str();
     } else {
         return "Error";
     }
+}
+
+template <typename T, typename S>
+inline bool AWS::S3::Connection::put(const std::string& bucket,
+    const Path& object, T& istream, std::size_t size, S& ostream,
+    std::size_t retries) {
+    /* Check the original read position of the stream so we can seek back */
+    std::streampos iposition = istream.tellg();
+    std::streampos oposition = ostream.tellp();
+
+    /* Begin forming our request */
+    std::string date = AWS::Auth::date();
+    AWS::Curl::Connection curl;
+    /* Compute our signature */
+    std::string signature = AWS::Auth::signature("PUT", "", "", date,
+        curl.get_request_headers(), "/" + bucket + object.string(),
+        secret_key);
+
+    /* Begin our attempts to upload */
+    long response = 0;
+    for (std::size_t i = 0; (response != 200) && (i < retries); ++i) {
+        istream.seekg(iposition);
+        ostream.seekp(oposition);
+        curl.reset();
+        curl.addHeader("User-Agent", user_agent);
+        curl.addHeader("Date", date);
+        curl.addHeader("Authorization", "AWS " + access_id + ":" + signature);
+        response = curl.put(
+            bucket + ".s3.amazonaws.com", object.string(), "", istream, size,
+            ostream);
+    }
+
+    ostream.flush();
+    return response == 200;
+}
+
+inline std::string AWS::S3::Connection::put(const std::string& bucket,
+    const Path& object, const std::string& input, std::size_t retries) {
+    std::istringstream istream(input);
+    std::ostringstream ostream;
+    put(bucket, object, istream, input.size(), ostream, retries);
+    return ostream.str();
 }

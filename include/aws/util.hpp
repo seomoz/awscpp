@@ -63,6 +63,19 @@ namespace AWS {
             /* Default constructor */
             Slist(): impl(NULL) {}
 
+            /* Fill it with the contents of a headers object */
+            Slist(const Headers& headers): impl(NULL) {
+                typename Headers::const_iterator hit(headers.begin());
+                typename HeaderValues::const_iterator vit;
+                for (; hit != headers.end(); ++hit) {
+                    for (vit = hit->second.begin();
+                         vit != hit->second.end();
+                         ++vit) {
+                        append(hit->first + ": " + *vit);
+                    }
+                }
+            }
+
             ~Slist() { curl_slist_free_all(impl); }
 
             /* Append to it */
@@ -113,9 +126,16 @@ namespace AWS {
             /* Add a header to our request */
             void addHeader(const std::string& key, const std::string& value);
 
-            /* Perform the request */
+            /* Perform a GET request */
             template <typename T>
-            long get(const std::string& host, const Path& path, const std::string& query, T& stream);
+            long get(const std::string& host, const Path& path,
+                const std::string& query, T& stream);
+
+            /* Perform a PUT request */
+            template <typename T, typename S>
+            long put(const std::string& host, const Path& path,
+                const std::string& query, T& istream, std::size_t size,
+                S& ostream);
 
             /* Get the request headers */
             const Headers& get_request_headers() { return request_headers; }
@@ -125,8 +145,16 @@ namespace AWS {
             static std::size_t appendHeader_(void *ptr, std::size_t size,
                 std::size_t nmemb, void *stream);
 
+            /* This is for use with curl when reading response data and pumping
+             * it out to a stream */
             template <typename T>
             static std::size_t appendData_(void* ptr, std::size_t size,
+                std::size_t nmemb, void *stream);
+
+            /* This is for use with curl when reading input data from a stream
+             * and pumping it out to the server */
+            template <typename T>
+            static std::size_t readData_(void* ptr, std::size_t size,
                 std::size_t nmemb, void *stream);
         private:
             CURL*   curl;
@@ -184,14 +212,7 @@ template <typename T>
 inline long AWS::Curl::Connection::get(const std::string& host,
     const Path& path, const std::string& query, T& stream) {
     /* Let's begin by putting together some headers */
-    Slist slist;
-    typename Headers::iterator hit(request_headers.begin());
-    typename HeaderValues::iterator vit;
-    for (; hit != request_headers.end(); ++hit) {
-        for (vit = hit->second.begin(); vit != hit->second.end(); ++vit) {
-            slist.append(hit->first + ": " + *vit);
-        }
-    }
+    Slist slist(request_headers);
 
     /* With our headers together, we can begin to make a request */
     std::string url = "http://" + host + path.string();
@@ -230,6 +251,56 @@ inline long AWS::Curl::Connection::get(const std::string& host,
     return response;
 }
 
+template <typename T, typename S>
+inline long AWS::Curl::Connection::put(const std::string& host,
+    const Path& path, const std::string& query, T& istream, std::size_t size,
+    S& ostream) {
+    /* Let's begin by putting together some headers */
+    Slist slist(request_headers);
+
+    std::string url = "http://" + host + path.string();
+    if (query != "") {
+        url += "?" + query;
+    }
+
+    /* Set the url, headers, verb, erro buff, etc. */
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist.slist());
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curl_error);
+
+    /* These came right out of the original code */
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3);
+
+    /* Now we'll set up to recieve the header */
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
+        AWS::Curl::Connection::appendHeader_);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, reinterpret_cast<void*>(this));
+    /* And how we'll write the data. */
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+        AWS::Curl::Connection::appendData_<S>);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, reinterpret_cast<void*>(&ostream));
+    /* And how we'll read the data from the input stream */
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION,
+        AWS::Curl::Connection::readData_<T>);
+    curl_easy_setopt(curl, CURLOPT_READDATA, reinterpret_cast<void*>(&istream));
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, size);
+
+    /* If there was an error, return something to say so */
+    if (curl_easy_perform(curl) != CURLE_OK) {
+        std::cerr << "Curl error: " << curl_error << std::endl;
+        return -1;
+    }
+
+    /* Get and return the response */
+    long response;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response);
+    return response;
+}
+
 inline std::size_t AWS::Curl::Connection::downloaded() {
     double down;
     curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &down);
@@ -259,6 +330,16 @@ inline std::size_t AWS::Curl::Connection::appendData_(void* ptr,
     (*reinterpret_cast<T*>(stream)) << std::string(
         reinterpret_cast<char*>(ptr), size * nmemb);
     return size * nmemb;
+}
+
+template <typename T>
+inline std::size_t AWS::Curl::Connection::readData_(void* ptr,
+    std::size_t size, std::size_t nmemb, void *stream) {
+    /* Apparently istream::read doesn't return the number of bytes read, and so
+     * to find out how much has been read, we'll use the get pointer */
+    T* istream = reinterpret_cast<T*>(stream);
+    istream->read(reinterpret_cast<char*>(ptr), size * nmemb);
+    return istream->gcount();
 }
 
 /******************************************************************************
