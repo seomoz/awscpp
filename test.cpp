@@ -28,7 +28,7 @@
 #include <boost/algorithm/string.hpp>
 
 /* The things we need to actually test */
-#include "aws/aws.hpp"
+#include "aws.hpp"
 
 using namespace apathy;
 
