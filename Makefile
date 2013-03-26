@@ -1,22 +1,22 @@
 CPP = g++
 CPPOPTS = -O3 -Wall -Werror -Werror=effc++ -g
 
-INCLUDES = -Iinclude -isystem third/Catch/single_include
-LIBS = -lcurl
+INCLUDES = -I..
+LIBS = `pkg-config --libs --cflags libcurl libssl`
 
 PREFIX ?= /usr/local/include
 
 all: test
 
 driver: driver.cpp *.hpp
-	$(CPP) $(CPPOPTS) $(INCLUDES) $(LIBS) -o driver driver.cpp 
+	$(CPP) $(CPPOPTS) $(INCLUDES) -o driver driver.cpp $(LIBS)
 
 test: test.cpp *.hpp
-	$(CPP) $(CPPOPTS) $(INCLUDES) $(LIBS) -o test test.cpp
+	$(CPP) $(CPPOPTS) $(INCLUDES) -isystem third/Catch/single_include -o test test.cpp $(LIBS)
 	./test
 
 clean:
-	rm -rdf test driver
+	rm -rf test driver
 
 install: *.hpp
 	mkdir -p $(PREFIX)/awscpp
