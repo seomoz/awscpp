@@ -42,10 +42,12 @@
 #else
     #include <openssl/hmac.h>
     #include <openssl/sha.h>
+    #include <openssl/evp.h>
 #endif
 
 /* Standard includes */
 #include <iostream>
+#include <cstdlib>
 #include <vector>
 #include <map>
 
@@ -139,6 +141,9 @@ namespace AWS {
 
             /* Get the request headers */
             const Headers& get_request_headers() { return request_headers; }
+
+            /* Get the error message */
+            std::string error() { return curl_error; }
 
             /* This is for use with curl when reading a response header. This
              * is not meant to be used, but it has to be public for curl */
@@ -324,6 +329,12 @@ inline std::size_t AWS::Curl::Connection::appendHeader_(void *ptr, std::size_t s
     return size * nmemb;
 }
 
+/* A couple of instantiations */
+template std::size_t AWS::Curl::Connection::appendData_<std::ofstream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
+template std::size_t AWS::Curl::Connection::appendData_<std::ostringstream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
+
 template <typename T>
 inline std::size_t AWS::Curl::Connection::appendData_(void* ptr,
     std::size_t size, std::size_t nmemb, void *stream) {
@@ -331,6 +342,12 @@ inline std::size_t AWS::Curl::Connection::appendData_(void* ptr,
         reinterpret_cast<char*>(ptr), size * nmemb);
     return size * nmemb;
 }
+
+/* A couple of instantiations */
+template std::size_t AWS::Curl::Connection::readData_<std::ifstream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
+template std::size_t AWS::Curl::Connection::readData_<std::istringstream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
 
 template <typename T>
 inline std::size_t AWS::Curl::Connection::readData_(void* ptr,
@@ -398,27 +415,27 @@ inline std::string AWS::Auth::signature(const std::string& verb,
         + date + "\n" + AWS::Auth::canonicalizedAmzHeaders(headers) + url;
 
     /* And now we'll begin the signing */
-    unsigned char processed[20];
+    unsigned char processed[21];
 #if defined(__APPLE__) && defined(__MACH__)
     CCHmac(kCCHmacAlgSHA1,
         reinterpret_cast<const void*>(secret_key.c_str()), secret_key.length(),
         reinterpret_cast<const void*>(toSign.c_str()), toSign.length(),
         reinterpret_cast<void*>(processed));
 #else
-    #error "S3 signing not yet implemented"
-    // Should look something like this, but until I can test it...
     std::memcpy(processed,
         HMAC(EVP_sha1(),
         secret_key.c_str(), secret_key.length(),
-        toSign.c_str(), toSign.length(0)),
+        /* We did try to a static_cast, but it yelled at us */
+        reinterpret_cast<const unsigned char*>(toSign.c_str()), toSign.length(),
         NULL, NULL),
     20);
 #endif
+    processed[20] = 0;
     /* Now we base64-encode the processed string */
     unsigned char b64processed[29];
     std::memset(b64processed, 0, 29);
     AWS::Auth::b64_encode(processed, 20, b64processed);
-    // @Martin -- I'm a little unsure about this line
+    /* We did try to use a static_cast, but it yelled at us */
     return std::string(reinterpret_cast<char*>(b64processed));
 }
 

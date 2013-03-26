@@ -61,4 +61,60 @@ TEST_CASE("auth", "Auth module works as expected") {
         std::string expected = boost::algorithm::join(pieces, "\n");
         REQUIRE(expected == AWS::Auth::canonicalizedAmzHeaders(headers));
     }
+
+    SECTION("signature", "Can correctly generate a couple trial signatures") {
+        AWS::Curl::Headers headers;
+
+        /* It's difficult to say that this is correct, so we'll just try
+         * several examples that are known to work */
+        std::string signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "Y17QeAkX2ntLsrAH2+ZFW7+x/QU=");
+
+        /* Let's change things up a bit and make sure it's correct and in
+         * particular that it's not the same as above */
+        signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is not a secret");
+        REQUIRE(signature == "10siG57hhLjp7RwUW8smhxrpSu4=");
+
+        /* Different verb */
+        signature = AWS::Auth::signature(
+            "GET", "1234567890", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "aP4Esas6h2VMpsgxjB7xX3hQrHw=");
+
+        /* Different md5 */
+        signature = AWS::Auth::signature(
+            "PUT", "12345abcde", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "TQa3VOQMZRcNAVuBNtWHFdQv2Ik=");
+
+        /* Different content type */
+        signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/csv", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "BgPP+sQXJUGReHQjXdz1/ldTdVA=");
+
+        /* Different date */
+        signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/html", "Tue, 26 Feb  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "lc/e1kq4Cp4G8nMHGmmzy4bnDwo=");
+
+        /* Different path */
+        signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/bar", "this is a secret");
+        REQUIRE(signature == "Ho4ASmVvjS2yeSmelF82UBOjKsY=");
+
+        /* Let's add a few headers and try again, and make sure they differ */
+        headers["x-amz-foo"].push_back("hello");
+        headers["x-amz-bar"].push_back("whiz");
+        signature = AWS::Auth::signature(
+            "PUT", "1234567890", "text/html", "Tue, 26 Mar  2013 21:14:41 GMT",
+            headers, "/foo", "this is a secret");
+        REQUIRE(signature == "20MV2sdcxFPjZCWm25nCJ7gpQ5o=");
+    }
 }

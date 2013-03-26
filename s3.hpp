@@ -83,12 +83,6 @@ namespace AWS {
         /* A S3 Connection object. When you connect, you provide all your
          * authentication credintials */
         struct Connection {
-            /* By default, load the environment variables */
-            Connection()
-                :access_id(getenv("AWS_ACCESS_ID"))
-                ,secret_key(getenv("AWS_SECRET_KEY"))
-                ,user_agent("awscpp-bot") {}
-
             /* Otherwise, you can provide them explicitly */
             Connection(
                 const std::string& access_id,
@@ -148,7 +142,7 @@ inline bool AWS::S3::Connection::get(const std::string& bucket,
         secret_key);
 
     /* Begin our attempt to fetch */
-    long response;
+    long response=0;
     for (std::size_t i = 0; (response != 200) && (i < retries); ++i) {
         stream.seekp(position);
         curl.reset();
@@ -157,6 +151,10 @@ inline bool AWS::S3::Connection::get(const std::string& bucket,
         curl.addHeader("Authorization", "AWS " + access_id + ":" + signature);
         response = curl.get(
             bucket + ".s3.amazonaws.com", object.string(), "", stream);
+    }
+
+    if (response != 200) {
+        std::cerr << curl.error() << std::endl;
     }
     
     stream.flush();
@@ -169,7 +167,7 @@ inline std::string AWS::S3::Connection::get(const std::string& bucket,
     if (get(bucket, object, stream, retries)) {
         return stream.str();
     } else {
-        return "Error";
+        return "Error: " + stream.str();
     }
 }
 
