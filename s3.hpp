@@ -94,11 +94,11 @@ namespace AWS {
             /* Download a S3 resource to a local file */
             template <typename T>
             bool get(const std::string& bucket, const Path& object,
-                T& stream, std::size_t retries=5);
+                T& stream, std::size_t retries=5) const;
 
             /* Download a S3 resource to a string and return it */
             std::string get(const std::string& bucket, const Path& object,
-                std::size_t retries=5);
+                std::size_t retries=5) const;
 
             /* Post the contents of a stream to a location on S3 */
             template <typename T, typename S>
@@ -114,7 +114,7 @@ namespace AWS {
 
             /* Do some S3 authentication y'all */
             bool auth(const std::string& url, const std::string& verb,
-                const std::string& contentMD5, const Headers& headers);
+                const std::string& contentMD5, const Headers& headers) const;
         private:
             /* We need to know a little bit about the auth here */
             std::string access_id;
@@ -129,7 +129,7 @@ namespace AWS {
  *****************************************************************************/
 template <typename T>
 inline bool AWS::S3::Connection::get(const std::string& bucket,
-    const Path& object, T& stream, std::size_t retries) {
+    const Path& object, T& stream, std::size_t retries) const {
     /* Check the original size of the file so that we can rewind if need be */
     std::streampos position = stream.tellp();
 
@@ -162,7 +162,7 @@ inline bool AWS::S3::Connection::get(const std::string& bucket,
 }
 
 inline std::string AWS::S3::Connection::get(const std::string& bucket,
-    const Path& object, std::size_t retries) {
+    const Path& object, std::size_t retries) const {
     std::ostringstream stream;
     if (get(bucket, object, stream, retries)) {
         return stream.str();
