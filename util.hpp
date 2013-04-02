@@ -108,7 +108,7 @@ namespace AWS {
             Connection(const Connection& other)
                 :curl(curl_easy_init())
                 ,curl_error()
-                ,request_headers()
+                ,request_headers(other.request_headers)
                 ,response_headers() {}
 
             ~Connection() {
@@ -116,6 +116,7 @@ namespace AWS {
             }
 
             const Connection& operator=(const Connection& other) {
+                request_headers = other.request_headers;
                 return *this;
             }
 
