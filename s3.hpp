@@ -21,6 +21,9 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *****************************************************************************/
 
+#ifndef AWSCPP__S3_HPP
+#define AWSCPP__S3_HPP
+
 /******************************************************************************
 * All things S3
 *****************************************************************************/
@@ -212,3 +215,5 @@ inline std::string AWS::S3::Connection::put(const std::string& bucket,
     put(bucket, object, istream, input.size(), ostream, retries);
     return ostream.str();
 }
+
+#endif
