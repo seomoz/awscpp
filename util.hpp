@@ -47,8 +47,10 @@
 
 /* Standard includes */
 #include <iostream>
+#include <fstream>
 #include <cstdlib>
 #include <vector>
+#include <string>
 #include <map>
 
 namespace AWS {
