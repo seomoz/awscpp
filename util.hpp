@@ -333,6 +333,8 @@ inline std::size_t AWS::Curl::Connection::appendHeader_(void *ptr, std::size_t s
 }
 
 /* A couple of instantiations */
+template std::size_t AWS::Curl::Connection::appendData_<std::ostream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
 template std::size_t AWS::Curl::Connection::appendData_<std::ofstream>(
     void* ptr, std::size_t size, std::size_t nmemb, void *stream);
 template std::size_t AWS::Curl::Connection::appendData_<std::ostringstream>(
@@ -347,6 +349,8 @@ inline std::size_t AWS::Curl::Connection::appendData_(void* ptr,
 }
 
 /* A couple of instantiations */
+template std::size_t AWS::Curl::Connection::readData_<std::istream>(
+    void* ptr, std::size_t size, std::size_t nmemb, void *stream);
 template std::size_t AWS::Curl::Connection::readData_<std::ifstream>(
     void* ptr, std::size_t size, std::size_t nmemb, void *stream);
 template std::size_t AWS::Curl::Connection::readData_<std::istringstream>(
