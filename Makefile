@@ -19,5 +19,5 @@ clean:
 	rm -rf test driver
 
 install: *.hpp
-	mkdir -p $(PREFIX)/awscpp
-	cp *.hpp $(PREFIX)/awscpp/
+	mkdir -p $(PREFIX)/include/awscpp
+	cp *.hpp $(PREFIX)/include/awscpp/
